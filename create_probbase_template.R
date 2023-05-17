@@ -105,6 +105,7 @@ new_probbase <- cbind(new_probbase[, 1:index_col_covid],
                       new_probbase[, (index_col_covid + 1):ncol(new_probbase)])
 colnames(new_probbase)[colnames(new_probbase) == ""] = "b_0113"
 
+
 ## Add new probbase rows for new 2022 instrument questions
 table(output_who2022$name %in% output_who2016$name)
 #### create new indic qdesc sdesc and who
@@ -280,22 +281,55 @@ for (i in 1:nrow(new_probbase)) {
     }
 }
 
-
 #------------------------------------------------------------------------------#
 # Identify possible, impossible, irrelevant, and split symptom/cause pairs     #
 #------------------------------------------------------------------------------#
 
-
 ## fill in values for cause/symptom pairs: (beware of SUBST==N!)
 ## (1) possible
-## (2) impossible
-## (3) irrelevant
-## (4) split by sex
-## (5) split by age
-## (6) split by sex and age
+## (2) impossible b/c demographics
+## (3) impossible - probbase
 
+colnames(new_probbase)
+index_cause_cols <-  grep("b_", colnames(new_probbase))
+cause_col_labels <- colnames(new_probbase)[index_cause_cols]
+orig <- new_probbase
 
+for (i in 2:nrow(new_probbase)) {
+    for (j in index_cause_cols) {
+        new_probbase[i, j] <- ifelse(orig[i, j] == "N", 3, 1)
+    }
+}
+
+## impossible b/c of demographics
+#### men & children -> maternal mortality
+tmp_index <- which(new_probbase[, "indic"] == "i019a")
+index_maternal_cols <-  grep("b_09", colnames(new_probbase))
+new_probbase[tmp_index, index_maternal_cols] <- 2
+young_index <- new_probbase[, "indic"] != "" & new_probbase[, "age"] != "" &
+    !grepl("5 to 14", new_probbase[, "age"]) &
+    !grepl("15 to 49", new_probbase[, "age"]) &
+    !grepl("50 to 64", new_probbase[, "age"]) &
+    !grepl("65+", new_probbase[, "age"])
+new_probbase[young_index, index_maternal_cols] <- 2
+
+## non-neonates: 10.02 Birth asphyxia, 10.03 Neonatal pneumonia, 10.04 Neonatal sepsis,
+##               "10.99 Other and unspecified neonatal CoD", "11.01 Fresh stillbirth",
+##               "11.02 Macerated stillbirth"
+neonate_cod <- c("b_1002", "b_1003", "b_1004", "b_1099", "b_1101", "b_1102")
+index_neonate_cols <- which(colnames(new_probbase) %in% neonate_cod)
+
+non_neonate_ind <- new_probbase[, "indic"] != "" &
+    new_probbase[, "age"] != "" & !grepl("neonate", new_probbase[, "age"])
+table(non_neonate_ind)
+new_probbase[non_neonate_ind, index_neonate_cols] <- 2
+  
 #------------------------------------------------------------------------------#
 # Write template to CSV                                                        #
 #------------------------------------------------------------------------------#
-write.csv(new_probbase, file = "template_probbase2020.csv", row.names=FALSE, na="")
+keep_cols <- c("indic", "qdesc", "status_in_2022", "who_22", "subst", "sex", "age",
+               cause_col_labels)
+index_keep_cols <- which(colnames(new_probbase) %in% keep_cols)
+final_probbase <- new_probbase[, index_keep_cols]
+final_probbase <- final_probbase[-2, ] ## remove prior
+write.csv(final_probbase, file = "template_probbase2020.csv", row.names=FALSE, na="")
